@@ -75,7 +75,7 @@ def cleanup_temp_output():
 def cleanup_old_outputs():
     """
     只清理 data/proxyip*.txt，不删除 data/.gitkeep。
-    注意：本函数只会在本轮已经检测到可用 IP 后执行。
+    本函数只在本轮已经检测到可用 IP 后执行。
     """
     ensure_output_dir()
 
@@ -90,7 +90,6 @@ def cleanup_old_outputs():
 def replace_outputs_from_temp():
     """
     将临时目录中的新 IP 库替换到 data/。
-    先写临时目录，成功后再替换，降低中途失败造成半成品的风险。
     """
     ensure_output_dir()
     cleanup_old_outputs()
@@ -151,10 +150,12 @@ def normalize_ip_port(ip, port="443"):
             return None
 
         port_int = int(port_str)
+
         if port_int < 1 or port_int > 65535:
             return None
 
         return f"{host}:{port_int}"
+
     except Exception:
         return None
 
@@ -164,9 +165,11 @@ def fetch_text_ips(url):
 
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+
         with urllib.request.urlopen(req, timeout=10) as response:
             content = response.read().decode("utf-8", errors="ignore").strip()
-            ips.update(extract_ipv4_and_port(content))
+
+        ips.update(extract_ipv4_and_port(content))
 
     except Exception as e:
         logging.warning(f"TXT 抓取失败: {url} | {e}")
@@ -183,10 +186,11 @@ def fetch_csv_ips(url):
 
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+
         with urllib.request.urlopen(req, timeout=15) as response:
             content = response.read().decode("utf-8-sig", errors="ignore")
 
-       .strip().splitlines())
+        reader = csv.DictReader(content.strip().splitlines())
 
         for row in reader:
             country = (
@@ -321,6 +325,7 @@ def check_ip_api_batch(ip_batch):
 
         for item in data:
             parsed = parse_api_item(item)
+
             if parsed:
                 results.append(parsed)
 
@@ -362,6 +367,7 @@ def main():
 
     # 域名解析
     domain_count = 0
+
     for domain in DOMAINS:
         try:
             ip = socket.gethostbyname(domain)
@@ -377,6 +383,7 @@ def main():
 
     # TXT 数据源
     text_count = 0
+
     for url in TEXT_URLS:
         result = fetch_text_ips(url)
         raw_ips.update(result)
@@ -385,6 +392,7 @@ def main():
 
     # CSV 数据源
     csv_count = 0
+
     for url in CSV_URLS:
         result = fetch_csv_ips(url)
         raw_ips.update(result)
@@ -405,6 +413,7 @@ def main():
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=TCP_MAX_WORKERS) as executor:
         results = executor.map(check_ip_tcp, raw_ips)
+
         for ip in results:
             if ip:
                 alive_ips_basic.append(ip)
@@ -430,7 +439,9 @@ def main():
                     f"({item['colo']}) | 延迟: {item['delay']}ms"
                 )
 
-    logging.info(f"🎯 API 检测完成: 检测 {len(alive_ips_basic)} 个，符合条件 {len(premium_ips)} 个")
+    logging.info(
+        f"🎯 API 检测完成: 检测 {len(alive_ips_basic)} 个，符合条件 {len(premium_ips)} 个"
+    )
 
     if not premium_ips:
         logging.warning("⚠️ API 检测后没有符合条件的可用 IP")
@@ -463,6 +474,7 @@ def main():
     try:
         write_outputs_to_temp(country_dict, final_total_ips)
         replace_outputs_from_temp()
+
     except Exception as e:
         cleanup_temp_output()
         logging.error(f"❌ 写入 IP 库失败: {e}")
