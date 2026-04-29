@@ -1,0 +1,55 @@
+name: 清理 GitHub Actions 记录
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: actions-cleanup
+  cancel-in-progress: true
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 清理旧的工作流运行记录
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "🧹 开始清理 GitHub Actions 旧记录..."
+
+          KEEP_DAYS=14
+          NOW=$(date -u +%s)
+
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${REPO}/actions/runs?per_page=100" \
+            --paginate \
+            --jq '.workflow_runs[] | [.id, .created_at, .name, .status] | @tsv' |
+          while IFS=$'\t' read -r RUN_ID CREATED_AT NAME STATUS; do
+            CREATED_TS=$(date -u -d "$CREATED_AT" +%s)
+            AGE_DAYS=$(( (NOW - CREATED_TS) / 86400 ))
+
+            if [ "$STATUS" = "in_progress" ] || [ "$STATUS" = "queued" ]; then
+              echo "⏩ 跳过运行中的记录: $RUN_ID | $NAME"
+              continue
+            fi
+
+            if [ "$AGE_DAYS" -gt "$KEEP_DAYS" ]; then
+              echo "🗑️ 删除: $RUN_ID | $NAME | ${AGE_DAYS} 天前"
+
+              gh api \
+                -X DELETE \
+                -H "Accept: application/vnd.github+json" \
+                "/repos/${REPO}/actions/runs/${RUN_ID}" || true
+            fi
+          done
+
+          echo "✅ 清理完成"
