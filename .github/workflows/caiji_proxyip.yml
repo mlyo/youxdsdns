@@ -1,40 +1,50 @@
-name: 自动洗库 (ProxyIP)
+name: ProxyIP 自动采集
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # 每 4 小时自动执行一次 (UTC 时间)
-  workflow_dispatch:       # 允许在 GitHub 网页上手动点击运行
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: proxyip-collect
+  cancel-in-progress: true
 
 jobs:
   fetch-and-test:
     runs-on: ubuntu-latest
+
     steps:
       - name: 检出代码库
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: 配置 Python 环境
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: 安装 Python 依赖
         run: |
-          pip install requests
+          pip install -r requirements.txt
 
-      - name: 执行采集与 API 深度测活
+      - name: 执行 ProxyIP 采集与检测
+        env:
+          TARGET_COUNTRIES: HK,US,SG,JP,CA,KR,DE
         run: |
           python collect_proxyip.py
 
-      - name: 提交并推送到 GitHub 仓库
+      - name: 提交并推送 IP 库
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          # 仅添加生成的 txt 文件
-          git add proxyip*.txt
-          # 检查是否有文件变更，如果有则提交
+
+          git add -A data
+
           if ! git diff --staged --quiet; then
-            git commit -m "🤖 自动更新极品节点库 $(date +'%Y-%m-%d %H:%M')"
+            git commit -m "🤖 自动更新 ProxyIP 库 $(date -u +'%Y-%m-%d %H:%M UTC')"
             git push
           else
-            echo "节点无变化，无需提交"
+            echo "IP 库无变化，无需提交"
           fi
