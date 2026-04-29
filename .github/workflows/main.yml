@@ -1,56 +1,72 @@
-name: 智能 DNS 同步与分发
+name: Cloudflare DNS 自动同步
 
 on:
   workflow_run:
-    workflows: ["自动洗库 (ProxyIP)"] # 👈 必须跟采集工作流的 name 严格一致
+    workflows: ["ProxyIP 自动采集"]
     types:
       - completed
-  workflow_dispatch: # 依然允许你手动点击运行
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-dns-sync
+  cancel-in-progress: true
 
 jobs:
   sync-dns:
     runs-on: ubuntu-latest
-    # 增加一个判断：只有当采集任务成功结束时，才执行 DNS 同步；或者当你手动触发时也执行
+
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
     steps:
       - name: 检出代码库
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: 确保使用最新仓库内容
+        run: |
+          git pull --ff-only origin "${{ github.event.repository.default_branch }}"
 
       - name: 配置 Python 环境
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: 安装 Python 依赖
         run: |
-          pip install requests
+          pip install -r requirements.txt
 
-      - name: 执行 Cloudflare DNS 智能同步
+      - name: 执行 Cloudflare DNS 同步
         env:
-          # 从仓库 Secrets 中读取 Cloudflare API Token
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
-          # 这里的 domains 填入你的主域名，多个用逗号隔开
-          python bestdomain.py --domains "cle.us.ci" --proxied "false" > dns_sync.log
+          python bestdomain.py \
+            --domains "cle.us.ci" \
+            --proxied "false" \
+            --min-ips 2 \
+            --max-records 15 > dns_sync.log
+
           cat dns_sync.log
 
-      - name: 发送 Telegram 运维报告 (可选)
+      - name: 发送 Telegram 运维报告
         if: always()
         env:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_ID: ${{ secrets.TG_ID }}
         run: |
-          # 如果没有配置 TG_TOKEN，则静默跳过
           if [ -z "$TG_TOKEN" ] || [ -z "$TG_ID" ]; then
             echo "未配置 Telegram 凭据，跳过发送通知。"
             exit 0
           fi
-          
-          # 从日志中提取核心的上下线动作
-          REPORT="🤖 <b>DDNS 智能同步报告</b>%0A------------------------%0A"
-          CHANGES=$(grep -E '✅ \[上线\]|🗑️ \[删除\]|🚨' dns_sync.log || echo "节点非常稳定，无需替换")
-          
+
+          REPORT="🤖 <b>Cloudflare DNS 同步报告</b>%0A------------------------%0A"
+          CHANGES=$(grep -E '🌐|🧪|🚨|❌|⚠️' dns_sync.log || echo "DNS 记录无变化")
+
           MESSAGE="${REPORT}${CHANGES}"
+
           curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             -d "chat_id=${TG_ID}" \
             -d "text=${MESSAGE}" \
