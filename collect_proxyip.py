@@ -36,7 +36,7 @@ SUB_URLS = [
     # "https://example.com/sub", 
 ]
 
-CHECK_API = "https://api.090227.xyz/check?proxyip="
+CHECK_API = "https://check.proxyip.cmliussss.net/check?proxyip="
 
 # ===================================================
 
