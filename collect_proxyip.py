@@ -16,9 +16,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
 # 1. 动态域名源
 DOMAINS = [
-    'proxyip.fxxk.dedyn.io', 'proxyip.us.fxxk.dedyn.io', 'proxyip.sg.fxxk.dedyn.io',
-    'proxyip.jp.fxxk.dedyn.io', 'proxyip.hk.fxxk.dedyn.io', 'proxyip.aliyun.fxxk.dedyn.io',
-    'proxyip.oracle.fxxk.dedyn.io', 'proxyip.digitalocean.fxxk.dedyn.io', 'proxyip.oracle.cmliussss.net'
+   # 'proxyip.fxxk.dedyn.io', 'proxyip.us.fxxk.dedyn.io', 'proxyip.sg.fxxk.dedyn.io',
+  #  'proxyip.jp.fxxk.dedyn.io', 'proxyip.hk.fxxk.dedyn.io', 'proxyip.aliyun.fxxk.dedyn.io',
+ #   'proxyip.oracle.fxxk.dedyn.io', 'proxyip.digitalocean.fxxk.dedyn.io', 'proxyip.oracle.cmliussss.net'
 ]
 
 # 2. CSV 测速库源
@@ -28,7 +28,7 @@ CSV_URLS = [
 
 # 3. 纯文本源
 TEXT_URLS = [
-    "https://raw.githubusercontent.com/ymyuuu/IPDB/refs/heads/main/bestproxy.txt",
+  #  "https://raw.githubusercontent.com/ymyuuu/IPDB/refs/heads/main/bestproxy.txt",
 ]
 
 # 4. 节点订阅源 (支持 V2ray/Clash Base64 格式，可自行添加公开订阅链接)
