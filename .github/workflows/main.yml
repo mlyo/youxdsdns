@@ -28,7 +28,7 @@ jobs:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
           # 这里的 domains 填入你的主域名，多个用逗号隔开
-          python bestdomain.py --domains "你的域名.com" --proxied "false" > dns_sync.log
+          python bestdomain.py --domains "cle.us.ci" --proxied "false" > dns_sync.log
           cat dns_sync.log
 
       - name: 发送 Telegram 运维报告 (可选)
