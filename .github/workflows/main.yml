@@ -1,14 +1,17 @@
 name: 智能 DNS 同步与分发
 
 on:
-  push:
-    paths:
-      - 'proxyip*.txt'     # 监听核心文件的变化，一旦更新自动触发
-  workflow_dispatch:       # 允许手动触发 DNS 同步
+  workflow_run:
+    workflows: ["自动洗库 (ProxyIP)"] # 👈 必须跟采集工作流的 name 严格一致
+    types:
+      - completed
+  workflow_dispatch: # 依然允许你手动点击运行
 
 jobs:
   sync-dns:
     runs-on: ubuntu-latest
+    # 增加一个判断：只有当采集任务成功结束时，才执行 DNS 同步；或者当你手动触发时也执行
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: 检出代码库
         uses: actions/checkout@v3
