@@ -11,7 +11,7 @@ def clean_string(text):
     return "".join(c for c in text if c.isprintable() or c == '\n').strip()
 
 def get_ip_list(filepath):
-    """【核心修复】读取文件，去除端口号，只提取纯 IPv4 用于 DNS"""
+    """读取文件，去除端口号，只提取纯 IPv4 用于 DNS"""
     if not os.path.exists(filepath): return []
     try:
         with open(filepath, 'r', encoding='utf-8-sig') as f:
@@ -22,10 +22,8 @@ def get_ip_list(filepath):
             ip_list = []
             
             for line in raw_lines:
-                # 🛑 核心修复点：把 1.2.3.4:443 砍成 1.2.3.4
+                # 把 1.2.3.4:443 砍成 1.2.3.4
                 pure_ip = line.split(':')[0] 
-                
-                # 顺手去重
                 if pure_ip not in ip_list:
                     ip_list.append(pure_ip)
                     
@@ -77,7 +75,6 @@ def sync_dns_records(api_token, zone_id, subdomain, domain, new_ips, proxied):
                 if res.status_code == 200:
                     print(f"✅ [上线] {record_name} -> {ip} (极品新节点)")
                 else:
-                    # 🛑 增加错误日志拦截，如果CF拒绝，直接打印原因
                     print(f"❌ [添加被拒] {ip} | CF返回: {res.text}")
             except Exception as e:
                 print(f"❌ 请求异常 {ip}: {e}")
@@ -98,11 +95,13 @@ def main():
     subdomain_mapping = {}
     for f in glob.glob("proxyip_*.txt"):
         tag = f.replace("proxyip_", "").replace(".txt", "")
-        if tag and tag != "all":
+        # 移除了关于 all 的判断逻辑，严格只处理带国家代码的文件
+        if tag:
             subdomain_mapping[tag] = f
-    
-    if os.path.exists("proxyip.txt"):
-        subdomain_mapping["all"] = "proxyip.txt"
+
+    if not subdomain_mapping:
+        print("⚠️ 未发现任何 proxyip_*.txt 结果文件，跳过 DNS 同步。")
+        return
 
     print(f"🚀 开始执行 DNS 维护，涉及子域前缀: {list(subdomain_mapping.keys())}")
 
