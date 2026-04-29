@@ -26,7 +26,8 @@ DOMAINS = [
 ]
 
 CSV_URLS = ["https://raw.githubusercontent.com/xgonce/Cloudflare_IP/refs/heads/main/result.csv"]
-TEXT_URLS = [#"https://raw.githubusercontent.com/ymyuuu/IPDB/refs/heads/main/bestproxy.txt"]
+TEXT_URLS = [#"https://raw.githubusercontent.com/ymyuuu/IPDB/refs/heads/main/bestproxy.txt"
+]
 SUB_URLS = []
 
 
