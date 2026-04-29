@@ -36,8 +36,6 @@ SUB_URLS = [
     # "https://example.com/sub", 
 ]
 
-CHECK_API = "https://check.proxyip.cmliussss.net/check?proxyip="
-
 # ===================================================
 
 def extract_ipv4_and_port(text):
@@ -68,7 +66,7 @@ def fetch_and_extract(url, is_base64=False):
     return ips
 
 def fetch_csv_ips(url):
-    """精准解析 CSV，严格筛选 IPv4 和高质量节点"""
+    """精准解析 CSV，严格筛选 IPv4"""
     ips = set()
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -82,13 +80,11 @@ def fetch_csv_ips(url):
                 
                 # 严格判断是否为纯 IPv4
                 if ip and '.' in ip and ':' not in ip:
-                    # 可选：如果 CSV 带测速数据，可以在此增加硬性过滤
-                    try:
-                        speed = float(row.get('速度(Mbps)') or 100) # 若无数据默认放行
-                        if speed < 20: 
-                            continue # 速度低于 20Mbps 的直接丢弃
-                    except ValueError:
-                        pass
+                    # 可选：如果需要，可以在这里加过滤逻辑
+                    # try:
+                    #     speed = float(row.get('速度(Mbps)') or 100)
+                    #     if speed < 20: continue
+                    # except ValueError: pass
                         
                     ips.add(f"{ip}:{port}")
     except Exception as e:
@@ -96,7 +92,7 @@ def fetch_csv_ips(url):
     return ips
 
 def check_ip_tcp(ip_str, timeout=2):
-    """漏斗第一道：TCP 快速测活 (粗筛)"""
+    """TCP 快速测活 (动态端口支持)"""
     if ':' in ip_str:
         host, port_str = ip_str.split(':', 1)
         port = int(port_str)
@@ -110,25 +106,32 @@ def check_ip_tcp(ip_str, timeout=2):
     except:
         return None
 
-def check_ip_api(ip_str):
-    """漏斗第二道：API 深度质检 (精检)"""
-    try:
-        url = f"{CHECK_API}{ip_str}"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        # 允许一定超时时间等待 API 返回
-        response = requests.get(url, headers=headers, timeout=8)
-        data = response.json()
+def get_ip_regions(ip_list):
+    """批量查询归属地 (剔除端口后发送，返回时拼回端口)"""
+    results = {}
+    pure_ips = [ip.split(':')[0] for ip in ip_list]
+    
+    for i in range(0, len(pure_ips), 100):
+        chunk = pure_ips[i:i+100]
+        try:
+            req = urllib.request.Request("http://ip-api.com/batch?fields=query,countryCode", 
+                                         data=json.dumps(chunk).encode('utf-8'), 
+                                         headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                for item in json.loads(response.read().decode('utf-8')):
+                    if item.get('countryCode'):
+                        results[item['query']] = item['countryCode']
+        except Exception as e:
+            logging.error(f"批量查归属地失败: {e}")
+        sleep(1.5)
         
-        if data.get("success") == True:
-            delay = data.get("delay", 999)
-            colo = data.get("colo", "UNKNOWN")
+    final_results = {}
+    for original_ip in ip_list:
+        pure_ip = original_ip.split(':')[0]
+        if pure_ip in results:
+            final_results[original_ip] = results[pure_ip]
             
-            # 只保留延迟低于 400ms 的顶级节点
-            if delay < 400:
-                return {"ip": ip_str, "colo": colo, "delay": delay}
-    except Exception:
-        pass
-    return None
+    return final_results
 
 def main():
     raw_ips = set()
@@ -150,6 +153,7 @@ def main():
     for url in CSV_URLS:
         raw_ips.update(fetch_csv_ips(url))
 
+    # 剔除局域网段
     raw_ips = {ip for ip in raw_ips if not ip.startswith(('127.', '10.', '192.168.', '172.'))}
     logging.info(f"✅ 抓取完成！共提取 {len(raw_ips)} 个候选节点。")
 
@@ -157,64 +161,51 @@ def main():
         return
 
     # --- 阶段 2: TCP 粗筛 (高并发) ---
-    logging.info("⚡ 第一道漏斗：开启 100 并发进行 TCP 端口初筛...")
-    alive_ips_basic = []
+    logging.info("⚡ 开启 100 并发进行 TCP 端口初筛...")
+    premium_nodes = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
         results = executor.map(check_ip_tcp, raw_ips)
         for ip in results:
             if ip:
-                alive_ips_basic.append(ip)
+                premium_nodes.append(ip)
                 
-    logging.info(f"✅ 粗筛完成！存活节点: {len(alive_ips_basic)} 个。")
-
-    if not alive_ips_basic:
-        return
-
-    # --- 阶段 3: API 精检 (受控并发) ---
-    logging.info("🎯 第二道漏斗：调用 API 获取真实机房与延迟 (严格限制 30 并发)...")
-    premium_nodes = []
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
-        results = executor.map(check_ip_api, alive_ips_basic)
-        for res in results:
-            if res:
-                premium_nodes.append(res)
-                logging.info(f"✨ 捕获极品节点: {res['ip']} | 机房: {res['colo']} | 延迟: {res['delay']}ms")
-
-    logging.info(f"🎯 质检完成！最终获得超级节点: {len(premium_nodes)} 个。")
+    logging.info(f"✅ 粗筛完成！绝对存活节点: {len(premium_nodes)} 个。")
 
     if not premium_nodes:
         return
 
-    # --- 阶段 4: 分类、打乱与限额保存 ---
-    colo_dict = {}
-    for node in premium_nodes:
-        colo = node['colo']
-        if colo not in colo_dict:
-            colo_dict[colo] = []
-        colo_dict[colo].append(node['ip'])
+    # --- 阶段 3: 查询归属地、分类、打乱与限额保存 ---
+    logging.info("🌍 正在使用本地批量查库获取节点归属地...")
+    ip_regions = get_ip_regions(premium_nodes)
+    
+    region_dict = {}
+    for ip in premium_nodes:
+        country = ip_regions.get(ip, "UNKNOWN")
+        if country not in region_dict:
+            region_dict[country] = []
+        region_dict[country].append(ip)
 
     final_total_ips = []
     
-    for colo, ips in colo_dict.items():
-        # 随机打乱该机房的 IP 列表
+    for country, ips in region_dict.items():
+        # 随机打乱该地区的 IP 列表 (实现动态轮换)
         random.shuffle(ips)
         # 截取前 10 个作为精英代表
         limited_ips = ips[:10]
-        colo_dict[colo] = limited_ips
+        region_dict[country] = limited_ips
         final_total_ips.extend(limited_ips)
 
-    # 1. 写入总库 (已去重、限额)
+    # 1. 写入总库
     with open('proxyip.txt', 'w', encoding='utf-8') as f:
         f.write('\n'.join(final_total_ips) + '\n')
-    logging.info(f"💾 总库已更新，保留各机房精英节点共 {len(final_total_ips)} 个")
+    logging.info(f"💾 总库已更新，保留各地区精英节点共 {len(final_total_ips)} 个")
     
-    # 2. 写入具体的机房专属子库 (例如 proxyip_hkg.txt)
-    for colo, ips in colo_dict.items():
-        if colo != "UNKNOWN":
-            with open(f'proxyip_{colo.lower()}.txt', 'w', encoding='utf-8') as f:
+    # 2. 写入地区专属子库
+    for country, ips in region_dict.items():
+        if country != "UNKNOWN":
+            with open(f'proxyip_{country.lower()}.txt', 'w', encoding='utf-8') as f:
                 f.write('\n'.join(ips) + '\n')
-            logging.info(f"💾 {colo} 机房专属节点库: 保存 {len(ips)} 个")
+            logging.info(f"💾 {country} 地区专属节点库: 保存 {len(ips)} 个")
 
 if __name__ == "__main__":
     main()
