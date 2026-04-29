@@ -178,7 +178,6 @@ def fetch_csv_ips(url):
     """
     支持格式：
     IP,cf-meta-ip,端口,速度(Mbps),CF归属国,机房,TCP延迟(ms),TLS延迟(ms)
-    40.233.87.120,2603:c021:4:9a88::1016,443,111.47,CA,YYZ,37.82,59.3
     """
     ips = set()
 
@@ -187,7 +186,7 @@ def fetch_csv_ips(url):
         with urllib.request.urlopen(req, timeout=15) as response:
             content = response.read().decode("utf-8-sig", errors="ignore")
 
-        reader = csv.DictReader(content.strip().splitlines())
+       .strip().splitlines())
 
         for row in reader:
             country = (
@@ -299,7 +298,10 @@ def check_ip_api_batch(ip_batch):
     外部接口支持最多 2 个 ProxyIP：
     https://api.090227.xyz/check?proxyip=ip1:443,ip2:443
     """
-    results =       )
+    results = []
+
+    try:
+        query = ",".join(ip_batch)
 
         res = requests.get(
             CHECK_API_ENDPOINT,
