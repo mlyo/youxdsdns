@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 # ==================== 数据源配置 ====================
 
 # 🎯 你的国家白名单 (专门用来精准拉取 CSV 和最后的分发)
-TARGET_COUNTRIES = ['HK', 'US', 'SG', 'JP', 'TW', 'KR'] 
+TARGET_COUNTRIES = ['HK', 'US', 'SG', 'JP', 'CA', 'KR', 'DE'] 
 CHECK_API = "https://api.090227.xyz/check?proxyip=" 
 
 DOMAINS = [
