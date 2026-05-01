@@ -18,38 +18,55 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 清理旧的工作流运行记录
+      - name: 清理工作流运行记录，只保留最新 4 个
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          KEEP_LATEST: 4
+          CURRENT_RUN_ID: ${{ github.run_id }}
         run: |
-          echo "🧹 开始清理 GitHub Actions 旧记录..."
+          echo "🧹 开始清理 GitHub Actions 运行记录..."
+          echo "📌 仅保留最新 ${KEEP_LATEST} 个已完成的工作流运行记录"
 
-          KEEP_DAYS=14
-          NOW=$(date -u +%s)
+          kept=0
+          deleted=0
+          skipped=0
 
           gh api \
             -H "Accept: application/vnd.github+json" \
             "/repos/${REPO}/actions/runs?per_page=100" \
             --paginate \
-            --jq '.workflow_runs[] | [.id, .created_at, .name, .status] | @tsv' |
-          while IFS=$'\t' read -r RUN_ID CREATED_AT NAME STATUS; do
-            CREATED_TS=$(date -u -d "$CREATED_AT" +%s)
-            AGE_DAYS=$(( (NOW - CREATED_TS) / 86400 ))
-
-            if [ "$STATUS" = "in_progress" ] || [ "$STATUS" = "queued" ]; then
-              echo "⏩ 跳过运行中的记录: $RUN_ID | $NAME"
+            --jq '.workflow_runs[] | [.created_at, .id, .name, .status, .conclusion] | @tsv' |
+          sort -r |
+          while IFS=$'\t' read -r CREATED_AT RUN_ID NAME STATUS CONCLUSION; do
+            if [ -z "$RUN_ID" ]; then
               continue
             fi
 
-            if [ "$AGE_DAYS" -gt "$KEEP_DAYS" ]; then
-              echo "🗑️ 删除: $RUN_ID | $NAME | ${AGE_DAYS} 天前"
-
-              gh api \
-                -X DELETE \
-                -H "Accept: application/vnd.github+json" \
-                "/repos/${REPO}/actions/runs/${RUN_ID}" || true
+            if [ "$RUN_ID" = "$CURRENT_RUN_ID" ]; then
+              echo "⏩ 跳过当前正在运行的清理任务: $RUN_ID | $NAME"
+              skipped=$((skipped + 1))
+              continue
             fi
+
+            if [ "$STATUS" != "completed" ]; then
+              echo "⏩ 跳过未完成记录: $RUN_ID | $NAME | $STATUS"
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            if [ "$kept" -lt "$KEEP_LATEST" ]; then
+              kept=$((kept + 1))
+              echo "✅ 保留第 ${kept} 个最新记录: $RUN_ID | $NAME | $CREATED_AT | $CONCLUSION"
+              continue
+            fi
+
+            echo "🗑️ 删除旧记录: $RUN_ID | $NAME | $CREATED_AT | $CONCLUSION"
+            gh api \
+              -X DELETE \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${REPO}/actions/runs/${RUN_ID}" || true
+            deleted=$((deleted + 1))
           done
 
           echo "✅ 清理完成"
