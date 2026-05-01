@@ -30,10 +30,10 @@ TARGET_COUNTRIES = [c.strip().upper() for c in TARGET_COUNTRIES if c.strip()]
 CHECK_API_ENDPOINT = "https://api.090227.xyz/check"
 
 API_BATCH_SIZE = 2
-API_MAX_WORKERS = 15
+API_MAX_WORKERS = 30
 TCP_MAX_WORKERS = 100
 
-MAX_DELAY_MS = 400
+MAX_DELAY_MS = 500
 MAX_PER_COUNTRY = 10
 
 # ==================== 数据源配置 ====================
