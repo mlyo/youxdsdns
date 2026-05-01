@@ -47,7 +47,8 @@ jobs:
             --domains "cle.us.ci" \
             --proxied "false" \
             --min-ips 2 \
-            --max-records 15 > dns_sync.log
+            --max-records 15 \
+            --ttl 60 > dns_sync.log
 
           cat dns_sync.log
 
