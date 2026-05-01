@@ -112,6 +112,7 @@ def sync_dns_records(
     domain,
     new_ips,
     proxied,
+    ttl=60,
     verbose=False,
     min_ips=2,
     dry_run=False,
@@ -158,16 +159,20 @@ def sync_dns_records(
         if content in online_ip_map:
             duplicate_record_ids.append((content, record_id))
         else:
-            online_ip_map[content] = record_id
+            online_ip_map[content] = rec
 
     new_ips_set = set(new_ips)
 
     added = 0
     deleted = 0
+    updated = 0
     kept = 0
     failed = 0
 
     allow_delete = not no_delete and len(new_ips) >= min_ips
+
+    if proxied and ttl != 1:
+        print(f"⚠️ {record_name} 已开启 proxied，Cloudflare 代理记录 TTL 会保持 Auto，无法自定义为 {ttl} 秒")
 
     if no_delete and verbose:
         print(f"🛡️ {record_name} 已启用 no-delete，本轮不删除 DNS 记录")
@@ -206,7 +211,8 @@ def sync_dns_records(
 
     # 删除已不在新列表里的 DNS 记录
     if allow_delete:
-        for online_ip, record_id in online_ip_map.items():
+        for online_ip, record in online_ip_map.items():
+            record_id = record.get("id")
             if online_ip not in new_ips_set:
                 if dry_run:
                     deleted += 1
@@ -234,23 +240,57 @@ def sync_dns_records(
                     failed += 1
                     print(f"❌ 删除异常: {record_name} -> {online_ip} | {e}")
 
-    # 新增 DNS 记录
+    # 新增 DNS 记录；已存在的记录如果 TTL / 代理状态不一致，则同步更新
     for ip in new_ips:
-        if ip in online_ip_map:
-            kept += 1
-
-            if verbose:
-                print(f"⏩ 保持: {record_name} -> {ip}")
-
-            continue
-
         data = {
             "type": "A",
             "name": record_name,
             "content": ip,
-            "ttl": 1,
+            "ttl": ttl,
             "proxied": proxied,
         }
+
+        if ip in online_ip_map:
+            record = online_ip_map[ip]
+            record_id = record.get("id")
+            current_ttl = record.get("ttl")
+            current_proxied = bool(record.get("proxied", False))
+
+            # Cloudflare 返回 ttl=1 表示 Auto；这里会把 Auto 改成指定秒数，例如 60。
+            if current_ttl != ttl or current_proxied != proxied:
+                if dry_run:
+                    updated += 1
+                    if verbose:
+                        print(f"🧪 预览更新: {record_name} -> {ip} | TTL {current_ttl} -> {ttl} | proxied {current_proxied} -> {proxied}")
+                    continue
+
+                try:
+                    res = requests.put(
+                        f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}",
+                        json=data,
+                        headers=headers,
+                        proxies=NO_PROXIES,
+                        timeout=10,
+                    )
+
+                    if cf_success(res):
+                        updated += 1
+                        if verbose:
+                            print(f"🔄 更新: {record_name} -> {ip} | TTL {current_ttl} -> {ttl} | proxied {current_proxied} -> {proxied}")
+                    else:
+                        failed += 1
+                        print(f"❌ 更新失败: {record_name} -> {ip} | {cf_error_text(res)}")
+
+                except Exception as e:
+                    failed += 1
+                    print(f"❌ 更新异常: {record_name} -> {ip} | {e}")
+
+            else:
+                kept += 1
+                if verbose:
+                    print(f"⏩ 保持: {record_name} -> {ip}")
+
+            continue
 
         if dry_run:
             added += 1
@@ -281,7 +321,7 @@ def sync_dns_records(
             print(f"❌ 新增异常: {record_name} -> {ip} | {e}")
 
     prefix = "🧪 预览" if dry_run else "🌐"
-    print(f"{prefix} {record_name} | ✅新增 {added} | 🗑️删除 {deleted} | ⏩保持 {kept} | ❌失败 {failed}")
+    print(f"{prefix} {record_name} | ✅新增 {added} | 🔄更新 {updated} | 🗑️删除 {deleted} | ⏩保持 {kept} | ❌失败 {failed}")
 
 
 def main():
@@ -292,6 +332,7 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="显示详细日志")
     parser.add_argument("--min-ips", type=int, default=2, help="可用 IP 少于该数量时不删除旧 DNS 记录")
     parser.add_argument("--max-records", type=int, default=15, help="每个子域最多同步多少条 A 记录")
+    parser.add_argument("--ttl", type=int, default=60, help="DNS TTL，单位秒；Cloudflare 中 60=1 分钟，1=自动")
     parser.add_argument("--dry-run", action="store_true", help="只预览，不实际修改 Cloudflare")
     parser.add_argument("--no-delete", action="store_true", help="只新增和保持，不删除旧 DNS 记录")
 
@@ -344,6 +385,7 @@ def main():
                 domain=domain_name,
                 new_ips=ips,
                 proxied=proxied_bool,
+                ttl=args.ttl,
                 verbose=args.verbose,
                 min_ips=args.min_ips,
                 dry_run=args.dry_run,
